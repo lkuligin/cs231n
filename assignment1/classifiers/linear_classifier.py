@@ -2,7 +2,7 @@ from __future__ import print_function
 
 import numpy as np
 from linear_svm import *
-#from softmax import *
+from softmax import *
 from past.builtins import xrange
 
 
@@ -99,6 +99,5 @@ class Softmax(LinearClassifier):
   """ A subclass that uses the Softmax + Cross-entropy loss function """
 
   def loss(self, X_batch, y_batch, reg):
-    pass
-    #return softmax_loss_vectorized(self.W, X_batch, y_batch, reg)
+    return softmax_loss_vectorized(self.W, X_batch, y_batch, reg)
 

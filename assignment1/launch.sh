@@ -1,4 +1,4 @@
-NAME="assign-1"
+NAME="cs231"
 STATUS=$(gcloud compute instances list --filter="name:$NAME" --format=json | python -c "import json,sys; print next(iter(json.load(sys.stdin)),{}).get('status', '')")
 
 if [ "$STATUS" = "" ]
@@ -7,7 +7,7 @@ then
 
     echo "creating the VM"
     gcloud compute instances create "$NAME" \
-    --zone "europe-west1-b" --machine-type "n1-standard-8" --subnet "default" \
+    --zone "europe-west1-b" --machine-type "n1-standard-16" --subnet "default" \
     --no-restart-on-failure --maintenance-policy "TERMINATE" \
     --service-account "852282193923-compute@developer.gserviceaccount.com" \
     --scopes "https://www.googleapis.com/auth/devstorage.read_write","https://www.googleapis.com/auth/logging.write","https://www.googleapis.com/auth/monitoring.write","https://www.googleapis.com/auth/servicecontrol","https://www.googleapis.com/auth/service.management.readonly","https://www.googleapis.com/auth/trace.append" \
@@ -15,6 +15,7 @@ then
 elif [ "$STATUS" == "TERMINATED" ]
 then
     echo "TERMINATED"
+    gcloud compute instances start $NAME
 else 
     echo "status is $STATUS"
 fi

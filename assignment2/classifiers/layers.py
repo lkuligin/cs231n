@@ -136,7 +136,9 @@ def batchnorm_forward(x, gamma, beta, bn_param):
     runninig_mean = update_running_stat(running_mean, x_mean)
     running_var = update_running_stat(running_var, x_var)
 
-    cache = {}
+    cache = {'x_scaled_mean': x-x_mean, 'x_scaled': x_scaled, 'gamma': gamma}
+    cache['std'] =  np.sqrt(x_var + eps)
+    cache['1_std'] = 1./np.sqrt(x_var + eps)
   elif mode == 'test':
     x_scaled = scale(x, running_mean, running_var)
     out = gamma * x_scaled + beta
@@ -167,7 +169,7 @@ def batchnorm_backward(dout, cache):
   - dgamma: Gradient with respect to scale parameter gamma, of shape (D,)
   - dbeta: Gradient with respect to shift parameter beta, of shape (D,)
   """
-  dx, dgamma, dbeta = None, None, None
+  dx, dgamma, dbeta = batchnorm_backward_alt(dout, cache)
   return dx, dgamma, dbeta
 
 
@@ -185,6 +187,17 @@ def batchnorm_backward_alt(dout, cache):
   Inputs / outputs: Same as batchnorm_backward
   """
   dx, dgamma, dbeta = None, None, None
+
+  N, D = dout.shape
+  x_scaled_mean = cache['x_scaled_mean']
+
+  dbeta = np.sum(dout, axis=0)
+  dgamma = np.sum(dout * cache['x_scaled'], axis=0)
+
+  # http://cthorey.github.io./backpropagation/
+  dx =(1. / N) * cache['gamma'] * 1 / cache['std'] * ((N * dout) - 
+    np.sum(dout, axis=0) - (x_scaled_mean) * np.square(cache['1_std']) * np.sum(dout * (x_scaled_mean), axis=0))
+
   return dx, dgamma, dbeta
 
 
@@ -215,9 +228,11 @@ def dropout_forward(x, dropout_param):
   out = None
 
   if mode == 'train':
-    pass
+    mask = (np.random.rand(*x.shape) < p) / p
+    out = x * mask
+
   elif mode == 'test':
-    pass
+    out = x
 
   cache = (dropout_param, mask)
   out = out.astype(x.dtype, copy=False)
@@ -238,7 +253,7 @@ def dropout_backward(dout, cache):
 
   dx = None
   if mode == 'train':
-    pass
+    dx = dout * mask
   elif mode == 'test':
     dx = dout
   return dx

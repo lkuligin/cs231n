@@ -163,6 +163,10 @@ class FullyConnectedNet(object):
       self.params['b{0}'.format(i)] = np.zeros([hidden_dims[i]])
       next_layer_input_dim = hidden_dims[i]
 
+      if self.use_batchnorm:
+        self.params['beta{0}'.format(i)] = np.zeros([hidden_dims[i]])
+        self.params['gamma{0}'.format(i)] = np.ones([hidden_dims[i]])
+
     self.params['W{0}'.format(self.num_layers-1)] = np.random.normal(0, weight_scale, [next_layer_input_dim, num_classes])
     self.params['b{0}'.format(self.num_layers-1)] = np.zeros(num_classes)
 
@@ -175,11 +179,11 @@ class FullyConnectedNet(object):
       if seed is not None:
         self.dropout_param['seed'] = seed
 
-        # With batch normalization we need to keep track of running means and
-        # variances, so we need to pass a special bn_param object to each batch
-        # normalization layer. You should pass self.bn_params[0] to the forward pass
-        # of the first batch normalization layer, self.bn_params[1] to the forward
-        # pass of the second batch normalization layer, etc.
+    # With batch normalization we need to keep track of running means and
+    # variances, so we need to pass a special bn_param object to each batch
+    # normalization layer. You should pass self.bn_params[0] to the forward pass
+    # of the first batch normalization layer, self.bn_params[1] to the forward
+    # pass of the second batch normalization layer, etc.
     self.bn_params = []
     if self.use_batchnorm:
       self.bn_params = [{'mode': 'train'} for i in range(self.num_layers - 1)]
@@ -209,6 +213,8 @@ class FullyConnectedNet(object):
 
     activation_cache = {}
     relu_cache = {}
+    batchnorm_cache = {}
+    dropout_cache = {}
 
     layer_output = X
 
@@ -218,7 +224,17 @@ class FullyConnectedNet(object):
         scores, activation_cache[i] = affine_forward(layer_output, W, b)
       else:
         layer_activation_input, activation_cache[i] = affine_forward(layer_output, W, b)
+          
+        if self.use_batchnorm:
+          layer_activation_input, batchnorm_cache[i] = batchnorm_forward(layer_activation_input,
+                                                                self.params['gamma{0}'.format(i)],
+                                                                self.params['beta{0}'.format(i)],
+                                                                self.bn_params[i])
+        
         layer_output, relu_cache[i] = relu_forward(layer_activation_input)
+        
+        if self.use_dropout:
+          layer_output, dropout_cache[i] = dropout_forward(layer_output, self.dropout_param)
 
     # If test mode return early
     if mode == 'test':
@@ -237,7 +253,16 @@ class FullyConnectedNet(object):
         loss, layer_grad = softmax_loss(layer_grad, y)
         grad_x, grad_w, grad_b = affine_backward(layer_grad, activation_cache[i])
       else:
+        if self.use_dropout:
+          grad_x = dropout_backward(grad_x, dropout_cache[i])
+
         layer_grad = relu_backward(grad_x, relu_cache[i])
+        
+        if self.use_batchnorm:
+          layer_grad, grad_gamma, grad_beta = batchnorm_backward(layer_grad, batchnorm_cache[i])
+          grads['beta{0}'.format(i)] = grad_beta
+          grads['gamma{0}'.format(i)] = grad_gamma
+        
         grad_x, grad_w, grad_b = affine_backward(layer_grad, activation_cache[i])
       
       grads['W{0}'.format(i)] = grad_w + self.reg * W

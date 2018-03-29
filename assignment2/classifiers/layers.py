@@ -281,9 +281,27 @@ def conv_forward_naive(x, w, b, conv_param):
     H' = 1 + (H + 2 * pad - HH) / stride
     W' = 1 + (W + 2 * pad - WW) / stride
   - cache: (x, w, b, conv_param)
-  """
-  out = None
-  pass
+  """  
+  stride = conv_param['stride']
+  pad = conv_param['pad']
+
+  N, C, H, W = x.shape
+  F, _, HH, WW = w.shape
+
+  out_H = 1 + (H + 2 * pad - HH) / stride
+  out_W = 1 + (H + 2 * pad - WW) / stride
+  out = np.zeros((N, F, out_H, out_W))
+  x_padded = np.pad(x, ((0,0), (0,0), (pad,pad), (pad,pad)), 'constant')
+
+  for image_ind in np.arange(N):
+    for filter_ in np.arange(F):
+      for pos_h in np.arange(out_H):
+        for pos_w in np.arange(out_W):
+          pos_x_h = pos_h * stride
+          pos_x_w = pos_w * stride
+          conv_piece = x_padded[image_ind, :, pos_x_h : pos_x_h+HH, pos_x_w : pos_x_w+WW]
+          out[image_ind, filter_, pos_h, pos_w] = np.sum(conv_piece * w[filter_, :]) + b[filter_]
+
   cache = (x, w, b, conv_param)
   return out, cache
 
@@ -301,9 +319,35 @@ def conv_backward_naive(dout, cache):
   - dw: Gradient with respect to w
   - db: Gradient with respect to b
   """
-  dx, dw, db = None, None, None
-  pass
-  return dx, dw, db
+  x, w, b, conv_param = cache
+  stride = conv_param['stride']
+  pad = conv_param['pad']
+
+  N, C, H, W = x.shape
+  F, C, HH, WW = w.shape
+  _, _, HH_out, WW_out = dout.shape
+
+  x_padded = np.pad(x, ((0,0), (0,0), (pad,pad), (pad,pad)), 'constant')
+
+  dx_padded, dw, db = np.zeros_like(x_padded), np.zeros_like(w), np.zeros_like(b)
+  
+  for filter_ in np.arange(F):
+    for channel in np.arange(C):
+      for pos_h in np.arange(HH):
+        for pos_w in np.arange(WW):
+          conv_piece = x_padded[:, channel, pos_h : pos_h+HH_out*stride : stride, pos_w : pos_w+WW_out*stride : stride]
+          dw[filter_, channel, pos_h, pos_w] = np.sum(dout[:, filter_, :, :] * conv_piece)
+
+  for filter_ in np.arange(F):
+    db[filter_] = np.sum(dout[:, filter_, :, :])
+
+  for image_ind in np.arange(N):
+    for filter_ in np.arange(F):
+      for pos_h in np.arange(HH_out):
+        for pos_w in np.arange(WW_out):
+          dx_padded[image_ind, :, pos_h*stride : pos_h*stride+HH, pos_w*stride : pos_w*stride+WW] += dout[image_ind, filter_, pos_h, pos_w] * w[filter_, :]
+
+  return dx_padded[:, :, pad:pad+H, pad:pad+W], dw, db
 
 
 def max_pool_forward_naive(x, pool_param):
@@ -321,8 +365,22 @@ def max_pool_forward_naive(x, pool_param):
   - out: Output data
   - cache: (x, pool_param)
   """
-  out = None
-  pass
+  N, C, H, W = x.shape
+  pool_height = pool_param['pool_height']
+  pool_width = pool_param['pool_width']
+  stride = pool_param['stride']
+
+  H_out = 1 + (H - pool_height) / stride
+  W_out = 1 + (H - pool_width) / stride
+
+  out = np.zeros((N, C, H_out, W_out))
+
+  for image_ind in np.arange(N):
+    for channel in np.arange(C):
+      for h_pos in np.arange(H_out):
+        for v_pos in np.arange(W_out):
+          out[image_ind, channel, h_pos, v_pos] = np.max(x[image_ind, channel, h_pos*stride : h_pos*stride+pool_height, v_pos*stride : v_pos*stride+pool_width])
+
   cache = (x, pool_param)
   return out, cache
 
@@ -338,8 +396,23 @@ def max_pool_backward_naive(dout, cache):
   Returns:
   - dx: Gradient with respect to x
   """
-  dx = None
-  pass
+  x, pool_param = cache
+  N, C, H, W = x.shape
+  _, _, HH, WW = dout.shape
+  stride = pool_param['stride']
+  pool_height = pool_param['pool_height']
+  pool_width = pool_param['pool_width']
+
+  dx = np.zeros_like(x)
+
+  for image_ind in np.arange(N):
+    for channel in np.arange(C):
+      for pos_h in np.arange(HH):
+        for pos_v in np.arange(WW):
+          max_index = np.argmax(x[image_ind, channel, pos_h*stride : pos_h*stride+pool_height, pos_v*stride : pos_v*stride+pool_width])
+          index = np.unravel_index(max_index, [pool_height,pool_width])
+          dx[image_ind, channel, pos_h*stride : pos_h*stride+pool_height, pos_v*stride : pos_v*stride+pool_width][index] = dout[image_ind, channel, pos_h, pos_v]
+
   return dx
 
 
@@ -365,11 +438,13 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
   - out: Output data, of shape (N, C, H, W)
   - cache: Values needed for the backward pass
   """
-  out, cache = None, None
+  N, C, H, W = x.shape
 
-  pass
+  x_flattened = x.transpose((0,2,3,1)).reshape(-1, C)
+  out_flattened, cache = batchnorm_forward(x_flattened, gamma, beta, bn_param)
 
-  return out, cache
+
+  return out_flattened.reshape((N, H, W, C)).transpose((0,3,1,2)), cache
 
 
 def spatial_batchnorm_backward(dout, cache):
@@ -387,9 +462,12 @@ def spatial_batchnorm_backward(dout, cache):
   """
   dx, dgamma, dbeta = None, None, None
 
-  pass
-
-  return dx, dgamma, dbeta
+  N, C, H, W = dout.shape
+  dout_flattened = dout.transpose((0,2,3,1)).reshape(-1, C)
+  
+  dx_flattened, dgamma, dbeta = batchnorm_backward(dout_flattened, cache)
+  
+  return dx_flattened.reshape((N, H, W, C)).transpose((0,3,1,2)), dgamma, dbeta
 
 
 def svm_loss(x, y):

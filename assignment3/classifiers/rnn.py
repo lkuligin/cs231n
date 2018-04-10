@@ -120,7 +120,11 @@ class CaptioningRNN(object):
     hidden_state0, cache0 = affine_forward(features, W_proj, b_proj)
     word_embeddings, cache_we = word_embedding_forward(captions_in, W_embed)
 
-    output_rnn, cache_rnn = rnn_forward(word_embeddings, hidden_state0, Wx, Wh, b)  
+    output_rnn, cache_rnn = None, None
+    if self.cell_type == 'rnn':
+      output_rnn, cache_rnn = rnn_forward(word_embeddings, hidden_state0, Wx, Wh, b)
+    elif self.cell_type == 'lstm':
+      output_rnn, cache_rnn = lstm_forward(word_embeddings, hidden_state0, Wx, Wh, b)
 
     scores_vocab, scores_vocab_cache = temporal_affine_forward(output_rnn, W_vocab, b_vocab)
     loss, grad_scores_vocab = temporal_softmax_loss(scores_vocab, captions_out, mask)
@@ -128,7 +132,11 @@ class CaptioningRNN(object):
     gradients = {}
 
     grad_h, gradients['W_vocab'], gradients['b_vocab'] = temporal_affine_backward(grad_scores_vocab, scores_vocab_cache)
-    grad_x, grad_h0, gradients['Wx'], gradients['Wh'], gradients['b'] = rnn_backward(grad_h, cache_rnn)
+    grad_x, grad_h0 = None, None
+    if self.cell_type == 'rnn':
+      grad_x, grad_h0, gradients['Wx'], gradients['Wh'], gradients['b'] = rnn_backward(grad_h, cache_rnn)
+    elif self.cell_type == 'lstm':
+      grad_x, grad_h0, gradients['Wx'], gradients['Wh'], gradients['b'] = lstm_backward(grad_h, cache_rnn)
 
     gradients['W_embed'] = word_embedding_backward(grad_x, cache_we)
 
@@ -175,10 +183,17 @@ class CaptioningRNN(object):
     hidden_state, _ = affine_forward(features, W_proj, b_proj)
     word_embedding, _ = word_embedding_forward(self._start, W_embed)
 
+    if self.cell_type == 'lstm':
+      cell_state = np.zeros_like(hidden_state)
+
     mask = np.ones(N)
     
     for step in np.arange(max_length):
-      hidden_state, _ = rnn_step_forward(word_embedding, hidden_state, Wx, Wh, b)
+      if self.cell_type == 'rnn':
+        hidden_state, _ = rnn_step_forward(word_embedding, hidden_state, Wx, Wh, b)
+      elif self.cell_type == 'lstm':
+        hidden_state, cell_state, _ = lstm_step_forward(word_embedding, hidden_state, cell_state, Wx, Wh, b)
+
       scores_vocab, _ = affine_forward(hidden_state, W_vocab, b_vocab)
       current_captions = np.argmax(scores_vocab, axis=1) 
       
